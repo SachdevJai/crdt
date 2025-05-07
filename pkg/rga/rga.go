@@ -2,11 +2,17 @@ package rga
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"sync"
 	"time"
 )
+
+type RGAMessage struct {
+	Type      string `json:"type"`
+	Timestamp string `json:"timestamp"`
+	Position  int    `json:"position"`
+	Value     string `json:"value"`
+}
 
 type RGAElement struct {
 	Value     string
@@ -39,7 +45,6 @@ func (r *RGA) Insert(position int, value string) {
 	}
 
 	r.elements = append(r.elements[:position], append([]RGAElement{elem}, r.elements[position:]...)...)
-	fmt.Printf("Inserted: %s at position %d\n", value, position)
 }
 
 func (r *RGA) Delete(position int) {
@@ -47,26 +52,8 @@ func (r *RGA) Delete(position int) {
 	defer r.mu.Unlock()
 
 	if position >= 0 && position < len(r.elements) {
-		deleted := r.elements[position]
 		r.elements = append(r.elements[:position], r.elements[position+1:]...)
-		fmt.Printf("Deleted: %s from position %d\n", deleted.Value, position)
 	}
-}
-
-func (r *RGA) SaveToFile(filename string) error {
-	data, err := json.Marshal(r)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(filename, data, 0644)
-}
-
-func (r *RGA) LoadFromFile(filename string) error {
-	data, err := os.ReadFile(filename)
-	if err != nil {
-		return err
-	}
-	return json.Unmarshal(data, r)
 }
 
 func (r *RGA) GetDocument() []string {
@@ -78,4 +65,35 @@ func (r *RGA) GetDocument() []string {
 		document = append(document, elem.Value)
 	}
 	return document
+}
+
+func (r *RGA) SaveToFile(filename string) error {
+	document := r.GetDocument()
+	data, err := json.Marshal(document)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filename, data, 0644)
+}
+
+func LoadFromFile(filename string) (*RGA, error) {
+	if _, err := os.Stat(filename); err == nil {
+		data, err := os.ReadFile(filename)
+		if err != nil {
+			return nil, err
+		}
+
+		var document []string
+		if err := json.Unmarshal(data, &document); err != nil {
+			return nil, err
+		}
+
+		rgaDoc := NewRGA()
+		for _, char := range document {
+			rgaDoc.Insert(len(rgaDoc.GetDocument()), char)
+		}
+		return rgaDoc, nil
+	}
+
+	return NewRGA(), nil
 }
