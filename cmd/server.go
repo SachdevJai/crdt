@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -31,7 +30,7 @@ func loadDocument() (*rga.RGA, error) {
 	// Check if the document file exists
 	if _, err := os.Stat(documentFile); err == nil {
 		// File exists, load the document
-		data, err := ioutil.ReadFile(documentFile)
+		data, err := os.ReadFile(documentFile)
 		if err != nil {
 			return nil, err
 		}
