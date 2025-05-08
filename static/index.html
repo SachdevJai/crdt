@@ -32,6 +32,12 @@
       inputEl.selectionStart = cursorPosition;
       inputEl.selectionEnd = cursorPosition;
     } else {
+      if (message == null) {
+        const inputEl = document.getElementById("input");
+        inputEl.value = "";
+        lastValue = "";
+        positionToID = [];
+      }
       log("Server (non-document message): " + e.data);
     }
   } catch (err) {
