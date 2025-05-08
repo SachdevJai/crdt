@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"sync"
+	"time"
 
 	"crdt/pkg/rga"
 
@@ -72,11 +73,14 @@ func (m *Manager) handleMessage(data []byte) {
 		return
 	}
 
-	// Apply the operation to the RGA
-	if msg.Type == "insert" {
-		m.rgaDoc.Insert(msg.Position, msg.Value)
-	} else if msg.Type == "delete" {
-		m.rgaDoc.Delete(msg.Position)
+	switch msg.Type {
+	case "Insert":
+		m.rgaDoc.Insert(msg.After, msg.ID, msg.Value, time.Now())
+	case "Delete":
+		m.rgaDoc.Delete(msg.ID)
+	default:
+		log.Println("Unknown message type:", msg.Type)
+		return
 	}
 
 	// Save the updated document to the file
@@ -90,7 +94,12 @@ func (m *Manager) handleMessage(data []byte) {
 
 func (m *Manager) sendDocument(conn *websocket.Conn, ctx context.Context) {
 	document := m.rgaDoc.GetDocument()
-	documentJSON, _ := json.Marshal(document)
+	documentJSON, err := json.Marshal(document)
+	if err != nil {
+		log.Println("Error marshalling document:", err)
+		return
+	}
+	// Send the document to the client
 	if err := conn.Write(ctx, websocket.MessageText, documentJSON); err != nil {
 		log.Println("Error sending document to client:", err)
 	}
@@ -101,7 +110,11 @@ func (m *Manager) broadcast() {
 	defer m.clientsMutex.Unlock()
 
 	document := m.rgaDoc.GetDocument()
-	documentJSON, _ := json.Marshal(document)
+	documentJSON, err := json.Marshal(document)
+	if err != nil {
+		log.Println("Error marshalling document for broadcast:", err)
+		return
+	}
 
 	for client := range m.clients {
 		err := client.Write(context.Background(), websocket.MessageText, documentJSON)

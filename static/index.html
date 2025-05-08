@@ -1,71 +1,66 @@
 <!DOCTYPE html>
 <html>
 <body>
-  <!-- Textarea for user input -->
   <textarea id="input" placeholder="Type message" autocomplete="off" rows="10" cols="50"></textarea>
-  
-  <!-- List for logging messages -->
   <ul id="log"></ul>
 
   <script>
     const ws = new WebSocket("ws://localhost:8080/ws");
-    let lastValue = ""; // Tracks the previous input value
 
-    // When WebSocket is open, log the connection
+    let lastValue = "";
+    let cursorPosition = 0;
+    let positionToID = []; // Maps positions to element IDs
+
     ws.onopen = () => {
-      const li = document.createElement("li");
-      li.textContent = "Connected to the server!";
-      document.getElementById("log").appendChild(li);
+      log("Connected to the server!");
     };
 
-    // When WebSocket receives a message from the server, handle it
     ws.onmessage = (e) => {
-      const data = e.data;
-      
-      try {
-        const message = JSON.parse(data);
-        if (Array.isArray(message)) {
-          // This is the initial document sent from the server
-          const documentText = message.join(""); // Join the array of strings into a single document text
-          document.getElementById("input").value = documentText;
-          lastValue = documentText; // Initialize lastValue with the document text
-        } else {
-          // If the message is not an initial document, treat it as a log message
-          const li = document.createElement("li");
-          li.textContent = "Server: " + data;
-          document.getElementById("log").appendChild(li);
-        }
-      } catch (err) {
-        console.error("Error handling message:", err);
-      }
-    };
+  try {
+    const message = JSON.parse(e.data);
 
-    // When WebSocket is closed, log the disconnection
+    if (Array.isArray(message) && message.length > 0 && typeof message[0] === "object") {
+      // New format: [{ id: "...", value: "..." }]
+      const documentText = message.map(m => m.value).join("");
+      lastValue = documentText;
+      positionToID = message.map(m => m.id);
+
+      const inputEl = document.getElementById("input");
+      inputEl.value = documentText;
+
+      // Restore the cursor position
+      inputEl.selectionStart = cursorPosition;
+      inputEl.selectionEnd = cursorPosition;
+    } else {
+      log("Server (non-document message): " + e.data);
+    }
+  } catch (err) {
+    console.error("Error handling message:", err);
+  }
+};
+
     ws.onclose = () => {
-      const li = document.createElement("li");
-      li.textContent = "Disconnected from the server!";
-      document.getElementById("log").appendChild(li);
+      log("Disconnected from the server!");
     };
 
-    // Send operation (insert or delete) to the server
-    const sendOp = (type, position, value) => {
-      const msg = {
-        type,
-        position,
-        value,
-        timestamp: new Date().toISOString()
-      };
+    const sendOp = (type, after, id, value) => {
+      const msg = { type, after, id, value, timestamp: new Date().toISOString() };
       ws.send(JSON.stringify(msg));
     };
 
-    // Handle changes to the textarea
     const inputEl = document.getElementById("input");
+
+    inputEl.addEventListener("select", (e) => {
+      cursorPosition = e.target.selectionStart;
+    });
 
     inputEl.addEventListener("input", (e) => {
       const currentValue = e.target.value;
 
       const minLen = Math.min(lastValue.length, currentValue.length);
       let changeIndex = 0;
+
+      // Find where change started
       while (
         changeIndex < minLen &&
         lastValue[changeIndex] === currentValue[changeIndex]
@@ -73,20 +68,39 @@
         changeIndex++;
       }
 
-      // Inserted characters
       if (currentValue.length > lastValue.length) {
-        const inserted = currentValue.slice(changeIndex, currentValue.length);
-        sendOp("insert", changeIndex, inserted);
-      }
-
-      // Deleted characters
-      if (currentValue.length < lastValue.length) {
-        const deleted = lastValue.slice(changeIndex, lastValue.length);
-        sendOp("delete", changeIndex, deleted);
+        // Insert
+        const inserted = currentValue.slice(changeIndex, currentValue.length - (lastValue.length - changeIndex));
+        for (let i = 0; i < inserted.length; i++) {
+          const char = inserted[i];
+          const insertPos = changeIndex + i;
+          const afterID = insertPos === 0 ? "head" : positionToID[insertPos - 1] || "head";
+          const newID = `client:${Date.now()}-${i}`;
+          sendOp("Insert", afterID, newID, char);
+          positionToID.splice(insertPos, 0, newID);
+        }
+      } else if (currentValue.length < lastValue.length) {
+        // Delete
+        const deleteCount = lastValue.length - currentValue.length;
+        for (let i = 0; i < deleteCount; i++) {
+          const deletePos = changeIndex;
+          const deletedID = positionToID[deletePos];
+          if (deletedID) {
+            sendOp("Delete", null, deletedID, null);
+            positionToID.splice(deletePos, 1);
+          }
+        }
       }
 
       lastValue = currentValue;
+      cursorPosition = inputEl.selectionStart;
     });
+
+    function log(text) {
+      const li = document.createElement("li");
+      li.textContent = text;
+      document.getElementById("log").appendChild(li);
+    }
   </script>
 </body>
 </html>
